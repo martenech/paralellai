@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-server
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres-db
+    environment:
+      POSTGRES_DB: llm_memory
+      POSTGRES_USER: llm_user
+      POSTGRES_PASSWORD: llm_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llm_user -d llm_memory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    container_name: redis-cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: llm-api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://llm_user:llm_password@postgres:5432/llm_memory
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - postgres
+      - redis
+      - ollama
+    volumes:
+      - ./app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  reflection-worker:
+    build: .
+    container_name: reflection-worker
+    environment:
+      DATABASE_URL: postgresql://llm_user:llm_password@postgres:5432/llm_memory
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      OLLAMA_URL: http://ollama:11434
+      EMBEDDING_PROVIDER: ollama
+      EMBEDDING_MODEL: nomic-embed-text
+      EMBEDDING_DIMENSION: 768
+      REFLECTION_INTERVAL: 60  # Run every minute for testing
+    depends_on:
+      - postgres
+      - redis
+      - ollama
+    volumes:
+      - ./app:/app/app
+    command: python -m app.workers.reflection_worker
+
+volumes:
+  ollama_data:
+  postgres_data:
+  redis_data:
