@@ -1,5 +1,10 @@
 #!/bin/bash
-echo "Starting LLM Memory CLI Client..."
-echo "==============================="
-echo ""
-python3 cli_client.py
+# Spustí CLI klienta pre LLM Memory systém
+
+# Aktivuje virtual environment ak existuje
+if [ -d "venv" ]; then
+    source venv/bin/activate
+fi
+
+# Spustí CLI klienta
+python cli_client.py

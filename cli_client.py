@@ -53,7 +53,7 @@ class LLMClient:
             "user_id": self.user_id,
             "title": title or f"Conversation {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         }
-        response = requests.post(f"{self.base_url}/api/conversations", json=data)
+        response = requests.post(f"{self.base_url}/api/conversations/", json=data)
         if response.status_code == 200:
             conversation = response.json()
             self.current_conversation_id = conversation["id"]
@@ -85,7 +85,7 @@ class LLMClient:
             print("No conversation selected")
             return
         
-        response = requests.get(f"{self.base_url}/api/messages/conversation/{self.current_conversation_id}")
+        response = requests.get(f"{self.base_url}/api/messages/conversation/{self.current_conversation_id}/")
         if response.status_code == 200:
             messages = response.json()
             if messages:
@@ -116,6 +116,19 @@ class LLMClient:
         if response.status_code == 200:
             chat_response = response.json()
             print(f"\nAI: {chat_response['assistant_message']['content']}")
+        elif response.status_code == 404 and "Conversation not found" in response.text:
+            # Conversation was deleted or doesn't exist, create new one
+            print("Conversation not found. Creating new conversation...")
+            self.current_conversation_id = None
+            if self.new_conversation():
+                # Retry sending the message
+                data["conversation_id"] = self.current_conversation_id
+                response = requests.post(f"{self.base_url}/api/messages/chat", json=data)
+                if response.status_code == 200:
+                    chat_response = response.json()
+                    print(f"\nAI: {chat_response['assistant_message']['content']}")
+                else:
+                    print(f"Error: {response.text}")
         else:
             print(f"Error: {response.text}")
     
